@@ -1,0 +1,88 @@
+---
+---
+---
+- name: Installing dependencies or (Server)
+  ansible.builtin.apt:
+    name: 
+      - apache2 
+      - ghostscript
+      - aptitude
+      - python3
+      - libapache2-mod-php
+      - mysql-server
+      - python3-pymysql
+     
+
+    state: latest 
+    update_cache: yes
+
+- name: Installing dependencies or (PHP)
+  ansible.builtin.apt:
+    name: 
+      - php
+      - php-bcmath
+      - php-curl
+      - php-imagick
+      - php-intl
+      - php-json
+      - php-mbstring
+      - php-mysql
+      - php-xml
+      - php-zip
+     
+    state: latest 
+    update_cache: yes
+
+- name: Create Mysql user
+  community.mysql.mysql_user:
+    login_host: 'localhost'
+    login_user: root
+    login_password: root
+    name: "{{ wp_mysql_user }}" 
+    password: "{{ wp_mysql_password }}"
+    #priv: "*.*:ALL"
+    state: present
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+
+- name: Create Mysql database
+  community.mysql.mysql_db:
+    login_host: 'localhost'
+    login_user: root
+    login_password: root
+    name: "{{ wp_mysql_db }}"
+    state: present
+
+- name: Download wordpress
+  get_url: 
+    url: https://wordpress.org/latest.tar.gz
+    dest: /tmp/wordpress.tar.gz
+    validate_certs: no 
+  register: download_wordpress
+
+- name: Extract wordpress 
+  unarchive: 
+    src: /tmp/wordpress.tar.gz 
+    dest: /var/www/
+    remote_src: True 
+  when: download_wordpress.changed
+
+- name: Update default Apache site
+  ansible.builtin.lineinfile:
+    dest: /etc/apache2/sites-enabled/000-default.conf
+    regexp: "(.)+DocumentRoot /var/www/html"
+    line: "DocumentRoot /var/www/wordpress"
+  notify: restart apache
+
+- name: Copy sample config file
+  command: mv /var/www/wordpress/wp-config-sample.php /var/www/wordpress/wp-config.php creates=/var/www/wordpress/wp-config.php
+
+- name: Update Wordpress config file
+  ansible.builtin.lineinfile: 
+    dest: /var/www/wordpress/wp-config.php
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }} "
+  with_items: 
+   - {'regexp': "define\\('DB_NAME', '(.)+'\\);", 'line': "define('DB_NAME', '{{wp_mysql_db}}');"}
+   - {'regexp': "define\\('DB_USER', '(.)+'\\);", 'line': "define('DB_USER', '{{wp_mysql_user}}');"}
+   - {'regexp': "define\\('DB_PASSWORD', '(.)+'\\);", 'line': "define('DB_PASSWORD', '{{wp_mysql_password}}');"}
+
